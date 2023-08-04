@@ -59,7 +59,7 @@ public class HoodieCompactionPlanGenerator<T extends HoodieRecordPayload, I, K, 
 
   @Override
   protected List<String> listPartitionsPaths(HoodieEngineContext engineContext, HoodieWriteConfig writeConfig, String basePathStr) {
-    if (writeConfig.getCompactionStrategy().equals("com.heap.datalake.compaction.SpecificPartitionsCompactionStrategy")) {
+    if (writeConfig.getCompactionStrategy().getClass().getName().equals("com.heap.datalake.compaction.SpecificPartitionsCompactionStrategy")) {
       String[] partitions = writeConfig.getString("hoodie.compaction.include.partitions").split(",");
       return Arrays.asList(partitions);
     } else {
