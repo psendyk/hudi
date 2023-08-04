@@ -77,7 +77,7 @@ public abstract class BaseHoodieCompactionPlanGenerator<T extends HoodieRecordPa
     // TODO : check if maxMemory is not greater than JVM or executor memory
     // TODO - rollback any compactions in flight
     HoodieTableMetaClient metaClient = hoodieTable.getMetaClient();
-    List<String> partitionPaths = FSUtils.getAllPartitionPaths(engineContext, writeConfig.getMetadataConfig(), metaClient.getBasePath());
+    List<String> partitionPaths = listPartitionsPaths(engineContext, writeConfig, metaClient.getBasePath());
 
     // filter the partition paths if needed to reduce list status
     partitionPaths = filterPartitionPathsByStrategy(writeConfig, partitionPaths);
@@ -91,39 +91,39 @@ public abstract class BaseHoodieCompactionPlanGenerator<T extends HoodieRecordPa
 
     SyncableFileSystemView fileSystemView = (SyncableFileSystemView) this.hoodieTable.getSliceView();
     Set<HoodieFileGroupId> fgIdsInPendingCompactionAndClustering = fileSystemView.getPendingCompactionOperations()
-        .map(instantTimeOpPair -> instantTimeOpPair.getValue().getFileGroupId())
-        .collect(Collectors.toSet());
+            .map(instantTimeOpPair -> instantTimeOpPair.getValue().getFileGroupId())
+            .collect(Collectors.toSet());
 
     // Exclude files in pending clustering from compaction.
     fgIdsInPendingCompactionAndClustering.addAll(fileSystemView.getFileGroupsInPendingClustering().map(Pair::getLeft).collect(Collectors.toSet()));
 
     if (filterLogCompactionOperations()) {
       fgIdsInPendingCompactionAndClustering.addAll(fileSystemView.getPendingLogCompactionOperations()
-          .map(instantTimeOpPair -> instantTimeOpPair.getValue().getFileGroupId())
-          .collect(Collectors.toList()));
+              .map(instantTimeOpPair -> instantTimeOpPair.getValue().getFileGroupId())
+              .collect(Collectors.toList()));
     }
 
     String lastCompletedInstantTime = hoodieTable.getMetaClient()
-        .getActiveTimeline().getTimelineOfActions(CollectionUtils.createSet(HoodieTimeline.COMMIT_ACTION,
-            HoodieTimeline.ROLLBACK_ACTION, HoodieTimeline.DELTA_COMMIT_ACTION))
-        .filterCompletedInstants().lastInstant().get().getTimestamp();
+            .getActiveTimeline().getTimelineOfActions(CollectionUtils.createSet(HoodieTimeline.COMMIT_ACTION,
+                    HoodieTimeline.ROLLBACK_ACTION, HoodieTimeline.DELTA_COMMIT_ACTION))
+            .filterCompletedInstants().lastInstant().get().getTimestamp();
 
     List<HoodieCompactionOperation> operations = engineContext.flatMap(partitionPaths, partitionPath -> fileSystemView
-        .getLatestFileSlices(partitionPath)
-        .filter(slice -> filterFileSlice(slice, lastCompletedInstantTime, fgIdsInPendingCompactionAndClustering))
-        .map(s -> {
-          List<HoodieLogFile> logFiles =
-              s.getLogFiles().sorted(HoodieLogFile.getLogFileComparator()).collect(toList());
-          totalLogFiles.add(logFiles.size());
-          totalFileSlices.add(1L);
-          // Avro generated classes are not inheriting Serializable. Using CompactionOperation POJO
-          // for Map operations and collecting them finally in Avro generated classes for storing
-          // into meta files.6
-          Option<HoodieBaseFile> dataFile = s.getBaseFile();
-          return new CompactionOperation(dataFile, partitionPath, logFiles,
-              writeConfig.getCompactionStrategy().captureMetrics(writeConfig, s));
-        }), partitionPaths.size()).stream()
-        .map(CompactionUtils::buildHoodieCompactionOperation).collect(toList());
+                    .getLatestFileSlices(partitionPath)
+                    .filter(slice -> filterFileSlice(slice, lastCompletedInstantTime, fgIdsInPendingCompactionAndClustering))
+                    .map(s -> {
+                      List<HoodieLogFile> logFiles =
+                              s.getLogFiles().sorted(HoodieLogFile.getLogFileComparator()).collect(toList());
+                      totalLogFiles.add(logFiles.size());
+                      totalFileSlices.add(1L);
+                      // Avro generated classes are not inheriting Serializable. Using CompactionOperation POJO
+                      // for Map operations and collecting them finally in Avro generated classes for storing
+                      // into meta files.6
+                      Option<HoodieBaseFile> dataFile = s.getBaseFile();
+                      return new CompactionOperation(dataFile, partitionPath, logFiles,
+                              writeConfig.getCompactionStrategy().captureMetrics(writeConfig, s));
+                    }), partitionPaths.size()).stream()
+            .map(CompactionUtils::buildHoodieCompactionOperation).collect(toList());
 
     LOG.info("Total of " + operations.size() + " compaction operations are retrieved");
     LOG.info("Total number of latest files slices " + totalFileSlices.value());
@@ -138,11 +138,11 @@ public abstract class BaseHoodieCompactionPlanGenerator<T extends HoodieRecordPa
     // Filter the compactions with the passed in filter. This lets us choose most effective compactions only
     HoodieCompactionPlan compactionPlan = getCompactionPlan(metaClient, operations);
     ValidationUtils.checkArgument(
-        compactionPlan.getOperations().stream().noneMatch(
-            op -> fgIdsInPendingCompactionAndClustering.contains(new HoodieFileGroupId(op.getPartitionPath(), op.getFileId()))),
-        "Bad Compaction Plan. FileId MUST NOT have multiple pending compactions. "
-            + "Please fix your strategy implementation. FileIdsWithPendingCompactions :" + fgIdsInPendingCompactionAndClustering
-            + ", Selected workload :" + compactionPlan);
+            compactionPlan.getOperations().stream().noneMatch(
+                    op -> fgIdsInPendingCompactionAndClustering.contains(new HoodieFileGroupId(op.getPartitionPath(), op.getFileId()))),
+            "Bad Compaction Plan. FileId MUST NOT have multiple pending compactions. "
+                    + "Please fix your strategy implementation. FileIdsWithPendingCompactions :" + fgIdsInPendingCompactionAndClustering
+                    + ", Selected workload :" + compactionPlan);
     if (compactionPlan.getOperations().isEmpty()) {
       LOG.warn("After filtering, Nothing to compact for " + metaClient.getBasePath());
     }
@@ -157,6 +157,10 @@ public abstract class BaseHoodieCompactionPlanGenerator<T extends HoodieRecordPa
     return partitionPaths;
   }
 
+  protected List<String> listPartitionsPaths(HoodieEngineContext engineContext, HoodieWriteConfig writeConfig, String basePathStr) {
+    return FSUtils.getAllPartitionPaths(engineContext, writeConfig.getMetadataConfig(), basePathStr);
+  }
+
   protected boolean filterFileSlice(FileSlice fileSlice, String lastCompletedInstantTime, Set<HoodieFileGroupId> pendingFileGroupIds) {
     return fileSlice.getLogFiles().count() > 0 && !pendingFileGroupIds.contains(fileSlice.getFileGroupId());
   }
@@ -166,3 +170,5 @@ public abstract class BaseHoodieCompactionPlanGenerator<T extends HoodieRecordPa
   }
 
 }
+
+

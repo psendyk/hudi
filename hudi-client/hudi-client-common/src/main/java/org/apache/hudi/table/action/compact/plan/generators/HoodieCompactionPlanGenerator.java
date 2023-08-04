@@ -30,12 +30,13 @@ import org.apache.hudi.table.HoodieTable;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 
+import java.util.Arrays;
 import java.util.List;
 
 import static java.util.stream.Collectors.toList;
 
 public class HoodieCompactionPlanGenerator<T extends HoodieRecordPayload, I, K, O>
-    extends BaseHoodieCompactionPlanGenerator<T, I, K, O> {
+        extends BaseHoodieCompactionPlanGenerator<T, I, K, O> {
 
   private static final Logger LOG = LogManager.getLogger(HoodieCompactionPlanGenerator.class);
 
@@ -48,7 +49,7 @@ public class HoodieCompactionPlanGenerator<T extends HoodieRecordPayload, I, K, 
     // Filter the compactions with the passed in filter. This lets us choose most effective
     // compactions only
     return writeConfig.getCompactionStrategy().generateCompactionPlan(writeConfig, operations,
-        CompactionUtils.getAllPendingCompactionPlans(metaClient).stream().map(Pair::getValue).collect(toList()));
+            CompactionUtils.getAllPendingCompactionPlans(metaClient).stream().map(Pair::getValue).collect(toList()));
   }
 
   @Override
@@ -57,7 +58,19 @@ public class HoodieCompactionPlanGenerator<T extends HoodieRecordPayload, I, K, 
   }
 
   @Override
+  protected List<String> listPartitionsPaths(HoodieEngineContext engineContext, HoodieWriteConfig writeConfig, String basePathStr) {
+    if (writeConfig.getCompactionStrategy().equals("com.heap.datalake.compaction.SpecificPartitionsCompactionStrategy")) {
+      String[] partitions = writeConfig.getString("hoodie.compaction.include.partitions").split(",");
+      return Arrays.asList(partitions);
+    } else {
+      return super.listPartitionsPaths(engineContext, writeConfig, basePathStr);
+    }
+  }
+
+  @Override
   protected boolean filterLogCompactionOperations() {
     return false;
   }
 }
+
+
